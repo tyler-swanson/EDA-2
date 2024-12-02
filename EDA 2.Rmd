@@ -144,7 +144,77 @@ for (col in names(application_train %>% select(where(is.character)))) {
 }
 ```
 
+
+```{r}
+#Aggregate bureau.csv and SK_ID_CURR
+bureau_aggregated <- bureau %>%
+  group_by(SK_ID_CURR) %>%
+  summarize(
+    bureau_count = n(), 
+    avg_credit_active = mean(CREDIT_ACTIVE == "Active", na.rm = TRUE), 
+    total_credit_amt = sum(AMT_CREDIT_SUM, na.rm = TRUE), 
+    avg_days_credit = mean(DAYS_CREDIT, na.rm = TRUE) 
+  )
+
+# Aggregate previous_application.csv and SK_ID_CURR
+previous_application_aggregated <- previous_application %>%
+  group_by(SK_ID_CURR) %>%
+  summarize(
+    prev_app_count = n(), # Number of previous applications per applicant
+    avg_credit_approved = mean(NAME_CONTRACT_STATUS == "Approved", na.rm = TRUE), # Proportion of approved applications
+    max_amt_credit = max(AMT_CREDIT, na.rm = TRUE), # Maximum credit amount in previous applications
+    avg_amt_credit = mean(AMT_CREDIT, na.rm = TRUE) # Average credit amount
+  )
+
+# Join bureau_aggregated and previous_application data with application_train
+application_train_combined <- application_train %>%
+  left_join(bureau_aggregated, by = "SK_ID_CURR") %>%
+  left_join(previous_application_aggregated, by = "SK_ID_CURR")
+
+# Join application_test.csv and previous_application with application_train
+application_test_combined <- application_test %>%
+  left_join(bureau_aggregated, by = "SK_ID_CURR") %>%
+  left_join(previous_application_aggregated, by = "SK_ID_CURR")
+
+# Verify TARGET column is in combined dataset
+application_train_combined$TARGET <- application_train$TARGET
+
+# Target variable and the new columns correlations
+correlations_new_columns <- sapply(application_train_combined %>% 
+                                       select(bureau_count, avg_credit_active, total_credit_amt, avg_days_credit, 
+                                              prev_app_count, avg_credit_approved, max_amt_credit, avg_amt_credit),
+                                     function(x) cor(application_train_combined$TARGET, x, use = "complete.obs"))
+
+# Convert correlations to a data frame 
+correlation_data_frame_added <- data.frame(
+  variable = names(correlations_new_columns),
+  correlation = correlations_new_columns
+) %>%
+  arrange(desc(abs(correlation)))
+
+# Display top variables correlating with target
+print("Target variable correlation with added variables:")
+
+print(correlation_data_frame_added)
+
+# Visualize the relationships
+for (variable in correlation_data_frame_added$variable) {
+  print(
+    ggplot(application_train_combined, aes_string(x = variable, fill = "factor(TARGET)")) +
+      geom_density(alpha = 0.5) +
+      labs(title = paste("Distribution of", variable, "by Target"),
+           x = variable, fill = "Target") +
+      theme_minimal() +
+      theme(legend.position = "bottom") +
+      scale_fill_manual(values = c("red", "blue"))
+  )
+}
+```
+
+
+
 ## Results
+Through the EDA, key predictors were identified on the uncleaned data set. These key predictors included EXT_SOURCE_1, EXT_SOURCE_2, and EXT_SOURCE_3 due to their correlation with the target variable.However, Data issues including missing values and potential outliers were discovered which requited some major data cleaning in order to prepare the data for modeling. Variable relationships with the target variable were explored, but additional analysis is needed to determine any major significance between variables. This EDA highlighted the need to handle missing data carefully and consider creating new features to make the most of the data analysis.
 
 ### Business Problem
 People often face difficulties obtaining loans due to a lack of credit history. Home Credit Group seeks to improve its prediction model for loan repayment ability to provide ethical lending opportunities.
@@ -167,3 +237,17 @@ People often face difficulties obtaining loans due to a lack of credit history. 
 2. Relationship between target and predictors.
 3. Missing data patterns and handling.
 4. Feature importance for prediction.
+
+# Create a New Repository on the Command Line
+echo "# EDA-2" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/tyler-swanson/EDA-2.git
+git push -u origin main
+
+# Puxh an Existing Repository from the Command Line
+git remote add origin https://github.com/tyler-swanson/EDA-2.git
+git branch -M main
+git push -u origin main
