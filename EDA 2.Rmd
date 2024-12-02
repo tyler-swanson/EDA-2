@@ -1,0 +1,169 @@
+---
+title: "EDA"
+author: "Tyler Swanson"
+date: "2024-09-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Packages & Import Data
+
+```{r}
+# Load necessary packages
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  install.packages("dplyr")
+}
+library(dplyr)
+
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  install.packages("ggplot2")
+}
+library(ggplot2)
+
+if (!requireNamespace("skimr", quietly = TRUE)) {
+  install.packages("skimr")
+}
+library(skimr)
+
+if (!requireNamespace("janitor", quietly = TRUE)) {
+  install.packages("janitor")
+}
+library(janitor)
+
+# Load data
+application_train <- read.csv("application_train.csv", stringsAsFactors = FALSE)
+application_test <- read.csv("application_test.csv", stringsAsFactors = FALSE)
+bureau <- read.csv("bureau.csv", stringsAsFactors = FALSE)
+previous_application <- read.csv("previous_application.csv", stringsAsFactors = FALSE)
+HomeCredit_data_dictionary <- read.csv("HomeCredit_columns_description.csv", stringsAsFactors = FALSE)
+```
+
+## Exploratory Data Analysis (EDA)
+
+### Exploring the Target Variable
+
+```{r}
+# Analyze the distribution of the target variable
+target_distribution <- application_train %>%
+  group_by(TARGET) %>%
+  summarise(count = n()) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+print(target_distribution)
+
+# Visualize the target distribution
+ggplot(target_distribution, aes(x = factor(TARGET), y = percentage, fill = factor(TARGET))) +
+  geom_bar(stat = "identity") +
+  labs(title = "Target Variable Distribution", x = "Target", y = "Percentage") +
+  theme_minimal()
+```
+
+### Exploring the Relationship Between Target and Predictors
+
+```{r}
+# Identify numeric and categorical variables
+numeric_vars <- application_train %>% select(where(is.numeric)) %>% select(-TARGET)
+categorical_vars <- application_train %>% select(where(is.character))
+
+# Correlation with target
+correlation_with_target <- sapply(numeric_vars, function(x) cor(application_train$TARGET, x, use = "complete.obs"))
+correlation_df <- data.frame(variable = names(correlation_with_target), correlation = correlation_with_target)
+
+# Top 5 predictors with strongest correlation
+top_predictors <- correlation_df %>% arrange(desc(abs(correlation))) %>% head(5)
+print(top_predictors)
+
+# Visualize correlations
+ggplot(top_predictors, aes(x = reorder(variable, abs(correlation)), y = correlation)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 5 Predictors with Strongest Correlation to Target",
+       x = "Predictor Variables",
+       y = "Correlation with Target") +
+  theme_minimal()
+```
+
+### Categorical Variable Analysis
+
+```{r}
+# Relationship between NAME_INCOME_TYPE and TARGET
+NAME_INCOME_TYPE_Data <- table(application_train$NAME_INCOME_TYPE, application_train$TARGET)
+prop_table <- as.data.frame(prop.table(NAME_INCOME_TYPE_Data, margin = 1))
+colnames(prop_table) <- c("NAME_INCOME_TYPE", "TARGET", "Proportion")
+
+# Visualize relationship
+ggplot(prop_table, aes(x = NAME_INCOME_TYPE, y = Proportion, fill = as.factor(TARGET))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Relationship between NAME_INCOME_TYPE and Target",
+       x = "Income Type", y = "Proportion", fill = "Target") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_minimal()
+```
+
+### Skimr Summary
+
+```{r}
+# Use skimr for detailed summary
+skim(application_train)
+```
+
+## Data Cleaning
+
+### Missing Data Analysis
+
+```{r}
+# Summarize missing data
+missing_data <- application_train %>%
+  summarise_all(~sum(is.na(.))) %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "missing_count") %>%
+  mutate(missing_percentage = (missing_count / nrow(application_train)) * 100) %>%
+  arrange(desc(missing_percentage))
+
+head(missing_data, 10)
+
+# Remove columns with >80% missing values
+columns_to_remove <- missing_data %>% filter(missing_percentage > 80) %>% pull(variable)
+application_train <- application_train %>% select(-all_of(columns_to_remove))
+```
+
+### Impute Missing Values
+
+```{r}
+# Impute numeric variables with median
+for (col in names(application_train %>% select(where(is.numeric)))) {
+  application_train[[col]][is.na(application_train[[col]])] <- median(application_train[[col]], na.rm = TRUE)
+}
+
+# Impute categorical variables with mode
+for (col in names(application_train %>% select(where(is.character)))) {
+  mode_value <- names(sort(table(application_train[[col]]), decreasing = TRUE))[1]
+  application_train[[col]][is.na(application_train[[col]])] <- mode_value
+}
+```
+
+## Results
+
+### Business Problem
+People often face difficulties obtaining loans due to a lack of credit history. Home Credit Group seeks to improve its prediction model for loan repayment ability to provide ethical lending opportunities.
+
+### Benefits of Solution
+- Increase loan approvals for eligible clients.
+- Decrease loan default rates.
+- Offer clients better loan terms for financial success.
+
+### Success Metrics
+1. Higher loan approval rates for eligible clients.
+2. Lower default rates.
+3. Improved client financial success.
+
+### Analytics Approach
+- Supervised machine learning for classification (repayment ability: yes/no).
+
+### Guiding Questions
+1. Distribution of target variable.
+2. Relationship between target and predictors.
+3. Missing data patterns and handling.
+4. Feature importance for prediction.
