@@ -2,17 +2,43 @@
 title: "EDA"
 author: "Tyler Swanson"
 date: "2024-09-28"
-output: html_document
+output:    
+    html_document:
+      number_sections: no
+      toc: yes 
+editor_options: 
+  chunk_output_type: inline
+  execute:
+    echo: true 
+    eval: true 
+  warning: false
+  message: false
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-## Load Packages & Import Data
+*Business Problem:* People often have a difficult time when it comes to getting loans due to a lack of credit history. This can lead to financial challenges and even result in loans being placed with unethical lenders. Home Credit Group is looking to solve this issue by providing a positive and safe borrowing experience to people that lack traditional credit history. One of Home Credit’s challenges is unlocking the full potential of their data to ensure their current system for predicting who can repay loans is accurate. Currently, some customers that should qualify for a loan are being wrongly rejected due to limitations in Home Credit Group’s system.
 
-```{r}
-# Load necessary packages
+*Benefit of a solution:* If Home Credit Group can enhance their prediction system to more accurately assess a customer’s ability to repay loans, they will be able to offer ethical lending options to those in need. Unlocking the full potential of their data will also ensure that the loan terms and conditions they provide will empower their clients to be successful.
+
+*Success Metrics:* 1. Increase the rate of approved loans for customers that can repay. The more qualified clients that work with Home Credit, the fewer loans that will be placed with unethical lenders. 2. Decrease loan default rates. 3. Provide clients with loan terms and conditions that will empower their success.
+
+*Analytics Approach:* Use a supervised machine learning methods to improve Home Credit Group’s predictive power when determining the binary target variable of repayment ability. Since the goal is to determine if a client will be able to repay their loan or not, this is a classification problem of yes or no.
+
+*Scope:* To goal of this project is to create a better model to predict if a client will be able to repay their loan and to provide better information on loan terms that will empower their client’s success.
+
+*Details:* This project will be completed by an individual MABA student over the 2024 Fall Semester. The project will be finished before January 2025. Important milestones will be Data Understanding, Data Preparation, Modeling, Evaluation, and Deployment.
+
+*Target Variable:* TARGET - target variable (1 - client with payment difficulties: he/she had late payment more than X days on at least one of the first Y installments of the loan in our sample, 0 - all other cases)
+
+*Guiding Questions:* 1. What is the distribution of the target variable? 2. Which numerical variables have the strongest correlations with the target variable? 3. How do categorical variables relate to the target variable? 4. How much missing data is present, and is there a pattern to it? 5. Are there any significant outliers or anomalies in the data? 6. How does repayment behavior change over time? 7. Which groups of clients are most likely to default? 8. How do external data sources impact repayment predictions? 9. Which features are most important for predicting the target variable?
+
+
+# Load packages & import data
+```{r Load packages & import data}
+# Load library
 if (!requireNamespace("dplyr", quietly = TRUE)) {
   install.packages("dplyr")
 }
@@ -23,57 +49,119 @@ if (!requireNamespace("ggplot2", quietly = TRUE)) {
 }
 library(ggplot2)
 
-if (!requireNamespace("skimr", quietly = TRUE)) {
-  install.packages("skimr")
-}
-library(skimr)
 
-if (!requireNamespace("janitor", quietly = TRUE)) {
-  install.packages("janitor")
-}
-library(janitor)
+# Import data
+mydir <- getwd()
+setwd(mydir)
 
-# Load data
-application_train <- read.csv("application_train.csv", stringsAsFactors = FALSE)
 application_test <- read.csv("application_test.csv", stringsAsFactors = FALSE)
+
+application_train <- read.csv("application_train.csv", stringsAsFactors = FALSE)
+
 bureau <- read.csv("bureau.csv", stringsAsFactors = FALSE)
+
 previous_application <- read.csv("previous_application.csv", stringsAsFactors = FALSE)
+
 HomeCredit_data_dictionary <- read.csv("HomeCredit_columns_description.csv", stringsAsFactors = FALSE)
 ```
 
-## Exploratory Data Analysis (EDA)
+# Exploratory data analysis tables
+```{r Exploratory data analysis tables}
 
-### Exploring the Target Variable
+# Explore application_train
+str(application_train)
 
-```{r}
-# Analyze the distribution of the target variable
+# summary(application_train)
+# head(application_train)
+
+# Explore application_test
+str(application_test)
+
+# summary(application_test)
+# head(application_test)
+
+# Explore bureau 
+str(bureau)
+
+# summary(bureau)
+# head(bureau)
+
+# Explore previous_application
+str(previous_application)
+
+# summary(previous_application)
+# head(previous_application)
+
+# Explore HomeCredit_data_dictionary
+# view(HomeCredit_data_dictionary)
+head(HomeCredit_data_dictionary)
+
+```
+
+# Tasks
+
+### Exploring the target variable in application_train
+
+The target variable analysis shows that 91.9% of clients have no payment difficulties with repayment, while 8.1% of clients have payment difficulties, this shows a highly imbalanced dataset. This imbalance suggests that a model predicting only the majority class will achieve an accuracy of 91.9%, but it will fail to effectively identify clients with payment difficulties.
+
+```{r Exploring the target variable}
+# TARGET: Target variable (1 - client with payment difficulties: he/she had late payment more than X days on at least one of the first Y installments of the loan in our sample, 0 - all other cases)
+
+# Explore the target variable in the training data
+table(application_train$TARGET)
+
+# Calculate the proportion for each class
 target_distribution <- application_train %>%
   group_by(TARGET) %>%
   summarise(count = n()) %>%
   mutate(percentage = count / sum(count) * 100)
 
+# Distribution
 print(target_distribution)
 
-# Visualize the target distribution
-ggplot(target_distribution, aes(x = factor(TARGET), y = percentage, fill = factor(TARGET))) +
+# Distribution plot
+ggplot(target_distribution, aes(factor(TARGET), percentage, fill = factor(TARGET))) +
   geom_bar(stat = "identity") +
-  labs(title = "Target Variable Distribution", x = "Target", y = "Percentage") +
-  theme_minimal()
+  labs(title = "Target Variable Distribution", x = "Target", y = "Percentage") 
+
+# Data balance 
+is_unbalanced <- max(target_distribution$percentage) > 50
+print(paste("The target variable is unbalanced:", is_unbalanced))
+
+# Majority class accuracy
+majority_class_percentage <- max(target_distribution$percentage) / 100
+
+print(paste("Majority class classifier =", round(majority_class_percentage * 100, 2), "%"))
 ```
 
-### Exploring the Relationship Between Target and Predictors
 
-```{r}
-# Identify numeric and categorical variables
-numeric_vars <- application_train %>% select(where(is.numeric)) %>% select(-TARGET)
-categorical_vars <- application_train %>% select(where(is.character))
+### Explore the relationship between target and predictors
 
-# Correlation with target
-correlation_with_target <- sapply(numeric_vars, function(x) cor(application_train$TARGET, x, use = "complete.obs"))
-correlation_df <- data.frame(variable = names(correlation_with_target), correlation = correlation_with_target)
+The analysis of the relationship between the target variable and predictors identifies the top 5 predictors most correlated with the target variable. External source data is the top 3 predictors followed by DAYS_BIRTH and REGION_RATING_CLIENT_W_CITY. The strongest correlations are relatively weak, with absolute values below 0.2. This indicates that individual predictors might have limited predictive power on their own which suggests that while no single predictor is highly influential. When looking at the relationship between categorical variables and the target variable, most categorical variables did not show a significant impact on clients having payment difficulties. However, NAME_INCOME_TYPE did show that Maternity leave and Unemployed clients have a relatively higher proportion of payment difficulties.
 
-# Top 5 predictors with strongest correlation
-top_predictors <- correlation_df %>% arrange(desc(abs(correlation))) %>% head(5)
+```{r relationship between target and predictors}
+
+# Remove non-predictive SK_ID_CURR column
+application_train_clean <- application_train %>% select(-SK_ID_CURR)
+
+# Split up numeric and categorical columns
+numeric_vars <- application_train_clean %>% select(where(is.numeric)) %>% select(-TARGET)
+categorical_vars <- application_train_clean %>% select(where(is.character))
+
+# Check target and numeric correlation
+correlation_with_target <- sapply(numeric_vars, function(x) cor(application_train_clean$TARGET, x, use = "complete.obs"))
+
+# Convert correlation result to a data frame
+correlation_df <- data.frame(variable = names(correlation_with_target), 
+                             correlation = correlation_with_target)
+
+# Top 5 predictors with the strongest correlation
+top_predictors <- correlation_df %>%
+  arrange(desc(abs(correlation))) %>%
+  head(5)
+
+print("Top Predictors:")
+
 print(top_predictors)
 
 # Visualize correlations
@@ -84,68 +172,172 @@ ggplot(top_predictors, aes(x = reorder(variable, abs(correlation)), y = correlat
        x = "Predictor Variables",
        y = "Correlation with Target") +
   theme_minimal()
-```
 
-### Categorical Variable Analysis
-
-```{r}
-# Relationship between NAME_INCOME_TYPE and TARGET
+# Plot relationships between target and top numeric predictors
+for (variable in top_predictors$variable) {
+  plot_numeric_relationship <- ggplot(application_train_clean, aes_string(x = variable, 
+    fill = as.factor(application_train_clean$TARGET))) +
+    geom_density(alpha = 0.5) +
+    labs(title = paste("Distribution of", variable, "by Target"),
+         x = variable, fill = "Target") +
+    theme_minimal() +
+    theme(legend.position = "bottom") +
+    scale_fill_manual(values = c("red", "blue"))
+  
+  print(plot_numeric_relationship)
+  
+  # NAME_INCOME_TYPE and TARGET relationship
 NAME_INCOME_TYPE_Data <- table(application_train$NAME_INCOME_TYPE, application_train$TARGET)
-prop_table <- as.data.frame(prop.table(NAME_INCOME_TYPE_Data, margin = 1))
-colnames(prop_table) <- c("NAME_INCOME_TYPE", "TARGET", "Proportion")
 
-# Visualize relationship
-ggplot(prop_table, aes(x = NAME_INCOME_TYPE, y = Proportion, fill = as.factor(TARGET))) +
+# proportion conversion
+conversion_prop_table <- prop.table(NAME_INCOME_TYPE_Data, margin = 1)
+
+# ggplot data frame
+prop_table_df <- as.data.frame(conversion_prop_table)
+colnames(prop_table_df) <- c("NAME_INCOME_TYPE", "Target", "Proportion")
+
+# Plot NAME_INCOME_TYPE and TARGET relationship
+plot_income_vs_target <- ggplot(prop_table_df, aes(x = NAME_INCOME_TYPE, y = Proportion, fill = factor(Target))) +
   geom_bar(stat = "identity", position = "dodge") +
   labs(title = "Relationship between NAME_INCOME_TYPE and Target",
-       x = "Income Type", y = "Proportion", fill = "Target") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  theme_minimal()
+       x = "Income Type", y = "Proportion",
+       fill = "Target") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display plot
+print(plot_income_vs_target)
+}
+
 ```
 
-### Skimr Summary
 
-```{r}
-# Use skimr for detailed summary
-skim(application_train)
+### skimr
+
+When running skimr on application_train_clean and application_test to highlight potential data issues, we can see that OWN_CAR_AGE has 202,929 missing values in application_train_clean and 32,312 missing values in application_test. OCCUPATION_TYPE, FONDKAPREMONT_MODE, HOUSETYPE_MODE, WALLSMATERIAL_MODE, and EMERGENCYSTATE_MODE also have substantial missing values. There are also multiple variables with outlines, for example, AMT_INCOME_TOAL has a max value of 117,000,000 in application_train_clean which suggests the presence of extreme outliers. We also get insight on negative values. Skimr highlights DAYS_BIRTH as a negative which is okay because based on the data dictionary we know that Client’s age in days at the time of application, however DAYS_EMPLOYED contains negative values that don’t make sense because DAYS_EMPLOYED is the number of days before the application the person started current employment.
+
+```{r skimr}
+if (!requireNamespace("skimr", quietly = TRUE)) {
+  install.packages("skimr")
+}
+
+# Load skimr
+library(skimr)
+
+# Use skim() to get a detailed summary of your data
+skim(application_train_clean)
+
+skim(application_test)
 ```
 
-## Data Cleaning
 
-### Missing Data Analysis
+###  Explore scope of missing data and clean it.
+
+During the data cleaning process, 122 columns with more than 80% missing values were removed from the training set. The test set did not have any columns with more than 80% missing values so none were removed. There were not any duplicate rows found and empty rows and columns were removed. Missing numbers were input using median values and categorical variables were filled with their respective mode values. This clean process resulted in a more usable dataset with 83 columns in the training data and 93 columns in the test data.
 
 ```{r}
-# Summarize missing data
-missing_data <- application_train %>%
-  summarise_all(~sum(is.na(.))) %>%
+# Load janitor
+library(janitor)
+
+# Clean column names
+application_train_clean <- application_train_clean %>% clean_names()
+
+# Remove empty rows and columns
+application_train_clean <- application_train_clean %>% remove_empty("rows") %>% remove_empty("cols")
+
+# Check for duplicate rows
+duplicates <- get_dupes(application_train_clean)
+print(duplicates)
+
+# Remove exact duplicates
+application_train_clean <- application_train_clean %>% distinct()
+
+# Summarize missing data for training dataset
+if (!requireNamespace("tidyr", quietly = TRUE)) {
+  install.packages("tidyr")
+}
+
+# Load tidyr
+library(tidyr)
+
+train_missing_summary <- application_train_clean %>%
+  summarize_all(~sum(is.na(.))) %>%
   pivot_longer(cols = everything(), names_to = "variable", values_to = "missing_count") %>%
-  mutate(missing_percentage = (missing_count / nrow(application_train)) * 100) %>%
+  mutate(missing_percentage = (missing_count / nrow(application_train_clean)) * 100) %>%
   arrange(desc(missing_percentage))
 
-head(missing_data, 10)
+# Display variables with most missing data in train
+print("Missing data in application_train:")
 
-# Remove columns with >80% missing values
-columns_to_remove <- missing_data %>% filter(missing_percentage > 80) %>% pull(variable)
-application_train <- application_train %>% select(-all_of(columns_to_remove))
-```
+# Missing data for test dataset summary 
+test_missing_summary <- application_test %>%
+  summarize_all(~sum(is.na(.))) %>%
+  gather(key = "variable", value = "missing_count") %>%
+  mutate(missing_percentage = (missing_count / nrow(application_test)) * 100) %>%
+  arrange(desc(missing_percentage))
 
-### Impute Missing Values
+# Display variables with most missing data in test
+print("Missing data in application_test:")
 
-```{r}
-# Impute numeric variables with median
-for (col in names(application_train %>% select(where(is.numeric)))) {
-  application_train[[col]][is.na(application_train[[col]])] <- median(application_train[[col]], na.rm = TRUE)
+# Identify columns in training data with < 80% missing values
+high_missing_train <- train_missing_summary %>% filter(missing_percentage > 80)
+
+# Identify columns in test data with more than 80% missing values
+high_missing_test <- test_missing_summary %>% filter(missing_percentage > 80)
+
+# Remove columns with 80% missing values 
+application_train_clean <- application_train_clean %>% select(-one_of(high_missing_train$variable))
+application_test_clean <- application_test %>% select(-one_of(high_missing_test$variable))
+
+# Review removed columns
+removed_columns_train <- setdiff(names(application_train), names(application_train_clean))
+removed_columns_test <- setdiff(names(application_test), names(application_test_clean))
+
+print(paste("Columns removed from training dataset:", length(removed_columns_train)))
+
+print(paste("Columns removed from test dataset:", length(removed_columns_test)))
+
+# Impute missing values for categorical variables
+
+# Numeric variables
+numeric_vars_train <- application_train_clean %>% select(where(is.numeric))
+numeric_vars_test <- application_test_clean %>% select(where(is.numeric))
+
+for (variable in names(numeric_vars_train)) {
+  application_train_clean[[variable]][is.na(application_train_clean[[variable]])] <- median(application_train_clean[[variable]], na.rm = TRUE)
+  application_test_clean[[variable]][is.na(application_test_clean[[variable]])] <- median(application_test_clean[[variable]], na.rm = TRUE)
 }
 
-# Impute categorical variables with mode
-for (col in names(application_train %>% select(where(is.character)))) {
-  mode_value <- names(sort(table(application_train[[col]]), decreasing = TRUE))[1]
-  application_train[[col]][is.na(application_train[[col]])] <- mode_value
+# Categorical variables
+categorical_vars_train <- application_train_clean %>% select(where(is.character))
+categorical_vars_test <- application_test_clean %>% select(where(is.character))
+
+for (variable in names(categorical_vars_train)) {
+  update_value_train <- names(sort(table(application_train_clean[[variable]]), decreasing = TRUE))[1]
+  update_value_test <- names(sort(table(application_test_clean[[variable]]), decreasing = TRUE))[1]
+  
+  application_train_clean[[variable]][is.na(application_train_clean[[variable]])] <- update_value_train
+  application_test_clean[[variable]][is.na(application_test_clean[[variable]])] <- update_value_test
 }
+
+if (!requireNamespace("skimr", quietly = TRUE)) {
+  install.packages("skimr")
+}
+
+# Load skimr
+library(skimr)
+
+skim(application_train_clean)
+
+skim(application_test_clean)
 ```
 
 
-```{r}
+### Transform data
+
+The data from bureau.csv and previous_application.csv were aggregated by SK_ID_CURR to calculate metrics like the number of records, average active credit, total credit amount, and average days since credit for each applicant. These aggregated features were then merged with application_train.csv and application_test.csv to enhance the main datasets with additional insights about the applicants’ credit history and previous applications.
+
+```{r Transform data}
 #Aggregate bureau.csv and SK_ID_CURR
 bureau_aggregated <- bureau %>%
   group_by(SK_ID_CURR) %>%
@@ -175,7 +367,13 @@ application_train_combined <- application_train %>%
 application_test_combined <- application_test %>%
   left_join(bureau_aggregated, by = "SK_ID_CURR") %>%
   left_join(previous_application_aggregated, by = "SK_ID_CURR")
+```
 
+### Explore the joined transactional data
+
+When analyzing the correlation between the target variable and the new columns pulled from bureau.csv and previous_application.csv. The highest positive correlation that was observed was avg_days_credit with a correlation of 0.0897. This suggests that clients with longer average credit days have a slightly higher likelihood of repayment difficulties. Similarly, avg_credit_active showed a positive correlation of 0.0774, suggesting that more active credits could be linked payment difficulties. Variables including avg_credit_approved, prev_app_count, and total_credit_amt showed weaker correlations with the target variable which indicates limited predictive power. When reviewing the correlation graphs, we can see overlapping distributions across TARGET classes so further analysis will be needed to determine the predictive power of the variables.
+
+```{r Explore the joined transactional data}
 # Verify TARGET column is in combined dataset
 application_train_combined$TARGET <- application_train$TARGET
 
@@ -211,43 +409,5 @@ for (variable in correlation_data_frame_added$variable) {
 }
 ```
 
-
-
-## Results
+### Results
 Through the EDA, key predictors were identified on the uncleaned data set. These key predictors included EXT_SOURCE_1, EXT_SOURCE_2, and EXT_SOURCE_3 due to their correlation with the target variable.However, Data issues including missing values and potential outliers were discovered which requited some major data cleaning in order to prepare the data for modeling. Variable relationships with the target variable were explored, but additional analysis is needed to determine any major significance between variables. This EDA highlighted the need to handle missing data carefully and consider creating new features to make the most of the data analysis.
-
-### Business Problem
-People often face difficulties obtaining loans due to a lack of credit history. Home Credit Group seeks to improve its prediction model for loan repayment ability to provide ethical lending opportunities.
-
-### Benefits of Solution
-- Increase loan approvals for eligible clients.
-- Decrease loan default rates.
-- Offer clients better loan terms for financial success.
-
-### Success Metrics
-1. Higher loan approval rates for eligible clients.
-2. Lower default rates.
-3. Improved client financial success.
-
-### Analytics Approach
-- Supervised machine learning for classification (repayment ability: yes/no).
-
-### Guiding Questions
-1. Distribution of target variable.
-2. Relationship between target and predictors.
-3. Missing data patterns and handling.
-4. Feature importance for prediction.
-
-# Create a New Repository on the Command Line
-echo "# EDA-2" >> README.md
-git init
-git add README.md
-git commit -m "first commit"
-git branch -M main
-git remote add origin https://github.com/tyler-swanson/EDA-2.git
-git push -u origin main
-
-# Puxh an Existing Repository from the Command Line
-git remote add origin https://github.com/tyler-swanson/EDA-2.git
-git branch -M main
-git push -u origin main
