@@ -1,0 +1,192 @@
+---
+title: "Modeling"
+author: "Tyler Swanson"
+date: "2024-09-28"
+output:    
+    html_document:
+      number_sections: no
+      toc: yes 
+editor_options: 
+  chunk_output_type: inline
+  execute:
+    echo: true 
+    eval: true 
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+```{r echo = FALSE, warning=FALSE}
+# Load  libraries
+library(dplyr)
+library(caret)
+library(randomForest)
+library(pROC)
+library(ggplot2)
+library(gridExtra)
+library(xgboost)
+
+
+# Import data
+mydir <- getwd()
+setwd(mydir)
+
+application_test <- read.csv("application_test.csv", stringsAsFactors = FALSE)
+
+application_train <- read.csv("application_train.csv", stringsAsFactors = FALSE)
+
+```
+
+# Exploratory data analysis tables
+```{r Exploratory data analysis tables}
+
+# Explore application_train
+str(application_train)
+
+# summary(application_train)
+# head(application_train)
+
+# Explore application_test
+str(application_test)
+
+```
+
+# modeling
+```{r modeling}
+# Logistic Regression Model
+
+# Engineer features in training data
+application_train$Age <- -application_train$DAYS_BIRTH / 365
+application_train$Per_Capita_Income <- application_train$AMT_INCOME_TOTAL / (application_train$CNT_CHILDREN + 1)
+application_train$Credit_Duration_Ratio <- application_train$AMT_CREDIT / application_train$AMT_ANNUITY
+application_train$Per_Capita_Loan <- application_train$AMT_CREDIT / (application_train$CNT_CHILDREN + 1)
+application_train$Loan_to_Credit_Score1 <- application_train$AMT_CREDIT / (application_train$EXT_SOURCE_1 + 1e-6)
+application_train$Loan_to_Credit_Score2 <- application_train$AMT_CREDIT / (application_train$EXT_SOURCE_2 + 1e-6)
+application_train$Loan_to_Credit_Score3 <- application_train$AMT_CREDIT / (application_train$EXT_SOURCE_3 + 1e-6)
+application_train$DTI <- application_train$AMT_ANNUITY / application_train$AMT_INCOME_TOTAL
+
+features <- c("Age", "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3", "AMT_INCOME_TOTAL", "CNT_CHILDREN", "DAYS_EMPLOYED", 
+              "AMT_CREDIT", "AMT_ANNUITY", "Per_Capita_Income", "Credit_Duration_Ratio", "Per_Capita_Loan", 
+              "Loan_to_Credit_Score1", "Loan_to_Credit_Score2", "Loan_to_Credit_Score3", "DTI")
+
+data <- application_train[complete.cases(application_train[features]), ]
+
+set.seed(123)
+train_index <- createDataPartition(data$TARGET, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+
+# Logistic Regression
+logistic_model <- glm(TARGET ~ ., data = train_data[, c("TARGET", features)], family = "binomial")
+preds <- predict(logistic_model, newdata = test_data[, features], type = "response")
+roc_curve <- roc(test_data$TARGET, preds)
+cat("Logistic Regression ROC-AUC:", auc(roc_curve), "\n")
+
+# Ensure all features exist in application_test
+application_test$Age <- -application_test$DAYS_BIRTH / 365
+application_test$Per_Capita_Income <- application_test$AMT_INCOME_TOTAL / (application_test$CNT_CHILDREN + 1)
+application_test$Credit_Duration_Ratio <- application_test$AMT_CREDIT / application_test$AMT_ANNUITY
+application_test$Per_Capita_Loan <- application_test$AMT_CREDIT / (application_test$CNT_CHILDREN + 1)
+application_test$Loan_to_Credit_Score1 <- application_test$AMT_CREDIT / (application_test$EXT_SOURCE_1 + 1e-6)
+application_test$Loan_to_Credit_Score2 <- application_test$AMT_CREDIT / (application_test$EXT_SOURCE_2 + 1e-6)
+application_test$Loan_to_Credit_Score3 <- application_test$AMT_CREDIT / (application_test$EXT_SOURCE_3 + 1e-6)
+application_test$DTI <- application_test$AMT_ANNUITY / application_test$AMT_INCOME_TOTAL
+
+# Validate if all features exist in the test data
+missing_features <- setdiff(features, names(application_test))
+if (length(missing_features) > 0) {
+  stop("Missing features in application_test: ", paste(missing_features, collapse = ", "))
+}
+
+# Logistic Regression Submission
+logistic_preds <- predict(logistic_model, newdata = application_test[, features, drop = FALSE], type = "response")
+logistic_submission <- data.frame(SK_ID_CURR = application_test$SK_ID_CURR, TARGET = logistic_preds)
+write.csv(logistic_submission, "logistic_submission.csv", row.names = FALSE)
+
+# Random Forest Model
+# library(randomForest)
+# rf_model <- randomForest(TARGET ~ ., data = train_data[, c("TARGET", features)], ntree = 500)
+# rf_preds <- predict(rf_model, newdata = test_data[, features], type = "prob")[, 2]
+# rf_roc_curve <- roc(test_data$TARGET, rf_preds)
+#cat("Random Forest ROC-AUC:", auc(rf_roc_curve), "\n")
+
+# Random Forest Submission
+# rf_submission_preds <- predict(rf_model, newdata = application_test[, features], type = "prob")[, 2]
+# rf_submission <- data.frame(SK_ID_CURR = application_test$SK_ID_CURR, TARGET = rf_submission_preds)
+# write.csv(rf_submission, "rf_submission.csv", row.names = FALSE)
+
+# XGBoost Model
+library(xgboost)
+xgb_data <- xgb.DMatrix(data = as.matrix(train_data[, features]), label = train_data$TARGET)
+xgb_test <- xgb.DMatrix(data = as.matrix(test_data[, features]), label = test_data$TARGET)
+
+xgb_params <- list(
+  max_depth = 6,
+  eta = 0.1,
+  objective = "binary:logistic",
+  eval_metric = "auc",
+  subsample = 0.8,
+  colsample_bytree = 0.8
+)
+
+xgb_model <- xgb.train(params = xgb_params, data = xgb_data, nrounds = 500, 
+                       watchlist = list(train = xgb_data, test = xgb_test), verbose = 0)
+xgb_preds <- predict(xgb_model, newdata = xgb_test)
+xgb_roc_curve <- roc(test_data$TARGET, xgb_preds)
+cat("XGBoost ROC-AUC:", auc(xgb_roc_curve), "\n")
+
+# XGBoost Submission
+# xgb_submission_preds <- predict(xgb_model, newdata = test_matrix)
+# xgb_submission <- data.frame(SK_ID_CURR = application_test$SK_ID_CURR, TARGET = xgb_submission_preds)
+# write.csv(xgb_submission, "xgb_submission.csv", row.names = FALSE)
+
+
+# Ensure test_matrix is properly defined
+# test_matrix <- xgb.DMatrix(data = as.matrix(test_data[, features]))
+
+# Generate predictions
+# xgb_submission_preds <- predict(xgb_model, newdata = test_matrix)
+
+# Optional: Save predictions for submission
+# write.csv(data.frame(ID = test_data$ID, TARGET = xgb_submission_preds), "xgb_submission.csv", row.names = FALSE)
+
+nrow(test_data)  # Check the number of rows in test_data
+length(xgb_submission_preds)  # Check the length of predictions
+test_data$ID <- seq_len(nrow(test_data))  # Create sequential IDs
+head(test_data$ID)  # Ensure test_data contains an ID column
+
+# Ensure an ID column exists
+if (is.null(test_data$ID)) {
+  test_data$ID <- seq_len(nrow(test_data))  # Generate IDs if missing
+}
+
+# Create submission file
+submission <- data.frame(ID = test_data$ID, TARGET = xgb_submission_preds)
+write.csv(submission, "xgb_submission.csv", row.names = FALSE)
+
+cat("Submission file saved as 'xgb_submission.csv'\n")
+
+# Kaggle Submission
+application_test$Age <- -application_test$DAYS_BIRTH / 365
+application_test$Per_Capita_Income <- application_test$AMT_INCOME_TOTAL / (application_test$CNT_CHILDREN + 1)
+application_test$Credit_Duration_Ratio <- application_test$AMT_CREDIT / application_test$AMT_ANNUITY
+application_test$Per_Capita_Loan <- application_test$AMT_CREDIT / (application_test$CNT_CHILDREN + 1)
+application_test$Loan_to_Credit_Score1 <- application_test$AMT_CREDIT / (application_test$EXT_SOURCE_1 + 1e-6)
+application_test$Loan_to_Credit_Score2 <- application_test$AMT_CREDIT / (application_test$EXT_SOURCE_2 + 1e-6)
+application_test$Loan_to_Credit_Score3 <- application_test$AMT_CREDIT / (application_test$EXT_SOURCE_3 + 1e-6)
+application_test$DTI <- application_test$AMT_ANNUITY / application_test$AMT_INCOME_TOTAL
+
+test_matrix <- xgb.DMatrix(data = as.matrix(application_test[, features]))
+submission_preds <- predict(xgb_model, newdata = test_matrix)
+
+submission <- data.frame(SK_ID_CURR = application_test$SK_ID_CURR, TARGET = submission_preds)
+write.csv(submission, "submission.csv", row.names = FALSE)
+
+
+```
+
+
